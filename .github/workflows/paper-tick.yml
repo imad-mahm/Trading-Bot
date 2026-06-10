@@ -1,0 +1,61 @@
+# GitHub Actions deployment: run ONE paper-trading cycle on a schedule.
+#
+# Zero-cost, no server needed. Each run does `paper.py tick` and then commits the
+# updated state file back to the repo so the next run resumes exactly where this
+# one left off.
+#
+# State persistence choice — we COMMIT live_state.json (not actions/cache):
+#   * Committing is durable and auditable: you can see every change in git
+#     history, and it never silently expires. actions/cache entries are evicted
+#     after ~7 days of no access and can be lost, which would wipe the bot's
+#     memory — disqualifying for this experiment.
+#   * Tradeoff: it adds a small "[skip ci]" commit each cycle. The `concurrency`
+#     block below prevents two scheduled runs from racing on the file.
+#
+# Scheduling note: GitHub's cron is best-effort. Runs can be delayed by several
+# minutes (sometimes more) under load, and may occasionally be skipped. For a
+# DAILY strategy with ATR stops that's fine — see the README for when to prefer
+# the always-on systemd deployment instead.
+
+name: paper-tick
+
+on:
+  schedule:
+    # Every 30 minutes: frequent enough to poll stops, and the runs just after
+    # 00:00 UTC pick up each new daily candle for the daily decision.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write          # needed to commit the updated state file
+
+concurrency:
+  group: paper-tick        # never let two ticks run at once (state-file safety)
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run one paper-trading cycle
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python paper.py tick
+
+      - name: Commit updated state
+        run: |
+          git config user.name "paper-bot"
+          git config user.email "paper-bot@users.noreply.github.com"
+          git add -f live_state.json
+          git diff --cached --quiet || git commit -m "paper state update [skip ci]"
+          git push

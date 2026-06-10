@@ -1,0 +1,32 @@
+# systemd service for the always-on paper-trading bot.
+#
+# Install (on a Linux PC, Raspberry Pi, or Oracle Cloud always-free VM):
+#   1. Edit the paths/user/secrets below to match your machine.
+#   2. sudo cp deploy/paper-bot.service /etc/systemd/system/paper-bot.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now paper-bot
+#   5. Watch it:  journalctl -u paper-bot -f
+#
+# Restart=always means if the bot ever crashes or the machine reboots, systemd
+# brings it straight back up — and on startup the bot reloads its saved state
+# and catches up any candles it missed while down.
+
+[Unit]
+Description=Crypto Paper Trading Bot (Phase 2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/crypto-backtester
+ExecStart=/home/YOUR_USER/crypto-backtester/.venv/bin/python paper.py run
+Restart=always
+RestartSec=10
+
+# Telegram secrets (or leave blank to log alerts only).
+Environment=TELEGRAM_BOT_TOKEN=
+Environment=TELEGRAM_CHAT_ID=
+
+[Install]
+WantedBy=multi-user.target

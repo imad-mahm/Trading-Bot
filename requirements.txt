@@ -1,0 +1,11 @@
+# --- Crypto Backtester dependencies (all free, no API keys) ---
+# Pinned with lower bounds that are known to work on Python 3.10–3.13.
+
+ccxt>=4.2.0          # Download public OHLCV data from Binance (no key needed)
+pandas>=2.0          # DataFrames / time-series handling
+numpy>=1.26          # Numerical arrays (works with the 2.x line too)
+backtesting>=0.6.4   # The backtest engine (needs >=0.6.4 for Python 3.13)
+matplotlib>=3.7      # Charts for the report
+PyYAML>=6.0          # Read config.yaml
+pyarrow>=14.0        # Save/load cached data as fast Parquet files
+pytest>=7.0          # Run the small test suite

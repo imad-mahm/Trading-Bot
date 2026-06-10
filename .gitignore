@@ -1,0 +1,23 @@
+# Cached market data and generated reports — never committed.
+data/
+reports/
+
+# Live paper-trading runtime files.
+logs/
+# NOTE: live_state.json is gitignored for local runs, but the GitHub Actions
+# deployment commits it with `git add -f` so state survives between cron ticks.
+live_state.json
+*.json.tmp
+
+# Secrets — the real .env is never committed (.env.example IS, as a template).
+.env
+
+# Python noise
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+.DS_Store

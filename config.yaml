@@ -1,0 +1,109 @@
+# =============================================================================
+# Crypto Backtester configuration  (Phase 2: trend-following on daily candles)
+# -----------------------------------------------------------------------------
+# Everything that controls a run lives here. Edit values, save, re-run.
+#
+# IMPORTANT change from Phase 1: strategy lookback periods are now written in
+# DAYS, not in candles. At run time we convert days -> candles for whichever
+# timeframe you're testing (e.g. a 200-day SMA = 200 candles on "1d" data, or
+# 4800 candles on "1h" data). This stops us from accidentally using an hourly
+# "200" on daily data, which would mean completely different things.
+# =============================================================================
+
+exchange: binance          # ccxt exchange id. Binance public data needs no key.
+
+# Which markets to test. BNB + SOL added as out-of-universe generalization
+# checks: a strategy that only works on BTC/ETH is probably overfit.
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - BNB/USDT
+  - SOL/USDT
+
+# Default timeframe for `backtest` (override on the CLI with --timeframe).
+timeframe: 1d
+
+# Timeframes that `python run.py download` fetches and caches.
+timeframes:
+  - 1d
+  - 1h
+
+# History window (UTC dates, YYYY-MM-DD).
+start_date: "2020-01-01"
+end_date: null             # null = up to the latest closed candle
+
+# In-sample / out-of-sample split. We only tune on data up to this date; the
+# period after it is the untouched exam set.
+in_sample_end: "2023-12-31"
+
+data_dir: data
+reports_dir: reports
+
+# Simulated starting cash (USDT). Large on purpose so the engine's whole-unit
+# rounding is negligible — only the % returns matter.
+cash: 1000000
+
+# ---- Realism: trading costs (UNCHANGED from Phase 1) ----
+fees:
+  taker_fee: 0.001         # 0.1% Binance spot taker fee, per side
+  slippage: 0.0005         # 0.05% assumed slippage, per side
+  # Charged on BOTH entry and exit -> round trip ≈ 0.30%.
+
+# ---- Risk management (src/risk.py — reused by the live bot) ----
+risk:
+  risk_per_trade: 0.02     # Risk at most 2% of equity per trade
+  atr_period: 14           # ATR lookback in candles (14 is standard on any TF)
+  atr_stop_multiplier: 2.0 # Stop-loss = entry - (multiplier x ATR)
+
+# ---- Regime gate (the 200-day trend filter applied to other strategies) ----
+regime:
+  sma_period_days: 200     # Only allow longs while price is above this SMA
+
+# ---- Strategy parameters (periods in DAYS) ----
+strategies:
+  trend_filter:
+    sma_period_days: 200   # Long above this SMA, cash below it
+    buffer_alt: 0.01       # The "with buffer" variant requires close 1% beyond
+                           # the SMA to flip (reduces whipsaw). Base variant = 0.
+
+  sma_crossover:
+    fast_days: 50          # Fast SMA (the classic 50/200 "golden cross")
+    slow_days: 200         # Slow SMA
+
+  donchian_breakout:
+    # Coarse in-sample sweep. Every combination below is run and shown
+    # out-of-sample too, so degradation is never hidden.
+    entry_days_sweep: [20, 55]   # N-day high to buy
+    exit_days_sweep: [10, 20]    # M-day low to sell
+
+# =============================================================================
+# Phase 2: LIVE PAPER TRADING (fake money, real live prices, no API key)
+# -----------------------------------------------------------------------------
+# The live bot imports the SAME strategy signal, indicators, and risk.py as the
+# backtester — only the configuration below changes. The strategy + params here
+# are the one that won Phase 1.5 out-of-sample: daily Donchian 20/20.
+# =============================================================================
+live:
+  strategy: donchian_breakout
+  params:
+    entry_days: 20            # N-day high to buy  (matches the validated winner)
+    exit_days: 20             # M-day low to sell
+    regime_gate: false        # the plain 20/20 was the honest in-sample pick
+
+  symbols:                    # each gets its OWN independent paper portfolio
+    - BTC/USDT
+    - ETH/USDT
+  timeframe: 1d               # one decision per day, shortly after 00:00 UTC
+  starting_balance: 10000     # fake USDT per symbol
+
+  poll_seconds: 300           # `paper.py run`: how often to poll for stops
+  daily_loss_limit: 0.05      # flatten + halt if equity drops >5% within 24h
+  data_anomaly_threshold: 0.30  # skip + alert if a candle jumps >30% vs previous
+
+  state_file: live_state.json # all state persisted here (atomic writes)
+  log_file: logs/paper.log    # rotating action log
+
+  telegram:                   # free alerts; see README for the 2-minute setup
+    enabled: true
+    bot_token: ""             # paste here OR set env TELEGRAM_BOT_TOKEN (preferred)
+    chat_id: ""               # paste here OR set env TELEGRAM_CHAT_ID
