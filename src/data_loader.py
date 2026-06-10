@@ -7,14 +7,27 @@ Parquet file so future runs are instant.
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 import ccxt
 import pandas as pd
 
+log = logging.getLogger("paper.data")
+
 # Standard OHLCV column names used everywhere in this project (lower-case).
 OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+# Live-price source preference. Binance is first because that's what the strategy
+# was validated on, but Binance returns HTTP 451 to US IPs (e.g. GitHub Actions
+# runners), so we fall back to Kraken then OKX — both serve the same BTC/USDT and
+# ETH/USDT spot candles and are reachable from US/cloud IPs. Daily candles close
+# at 00:00 UTC on all three, so they line up. (Override via live.exchanges.)
+DEFAULT_EXCHANGE_CHAIN = ["binance", "kraken", "okx"]
+
+# Reuse one ccxt object per exchange (creating them is comparatively expensive).
+_EXCHANGE_CACHE: dict[str, ccxt.Exchange] = {}
 
 # Seconds per unit, for converting timeframe strings like "1h" or "1d".
 _UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
@@ -42,10 +55,12 @@ def days_to_bars(days: float, timeframe: str) -> int:
 
 
 def get_exchange(exchange_name: str = "binance") -> ccxt.Exchange:
-    """Create a ccxt exchange object with rate-limiting turned on (so we don't
-    hammer the API and get temporarily blocked)."""
-    exchange_class = getattr(ccxt, exchange_name)
-    return exchange_class({"enableRateLimit": True})
+    """Return a cached ccxt exchange object with rate-limiting turned on (so we
+    don't hammer the API and get temporarily blocked)."""
+    if exchange_name not in _EXCHANGE_CACHE:
+        exchange_class = getattr(ccxt, exchange_name)
+        _EXCHANGE_CACHE[exchange_name] = exchange_class({"enableRateLimit": True})
+    return _EXCHANGE_CACHE[exchange_name]
 
 
 def _safe_symbol(symbol: str) -> str:
@@ -127,20 +142,38 @@ def fetch_recent_ohlcv(
     symbol: str,
     timeframe: str,
     limit: int = 400,
-    exchange_name: str = "binance",
+    exchanges: list[str] | None = None,
 ) -> pd.DataFrame:
     """Fetch the most recent `limit` candles for live use (no caching).
+
+    Tries each exchange in `exchanges` (default: Binance -> Kraken -> OKX) and
+    returns the first one that answers. This is what makes the bot run in the
+    cloud: if Binance is geoblocked (HTTP 451 from US IPs like GitHub Actions),
+    it transparently falls back to an exchange that isn't.
 
     The LAST row is usually the still-forming candle (its open is known, but its
     high/low/close are still updating). The live engine separates that out so it
     never trades on an unfinished candle. Returns a UTC-indexed OHLCV DataFrame.
     """
-    exchange = get_exchange(exchange_name)
-    raw = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-    df = pd.DataFrame(raw, columns=["timestamp", *OHLCV_COLUMNS])
-    df = df.drop_duplicates(subset="timestamp").sort_values("timestamp")
-    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    return df.set_index("datetime")[OHLCV_COLUMNS]
+    chain = exchanges or DEFAULT_EXCHANGE_CHAIN
+    errors: list[str] = []
+    for name in chain:
+        try:
+            exchange = get_exchange(name)
+            raw = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            if not raw:
+                raise ValueError("no candles returned")
+            df = pd.DataFrame(raw, columns=["timestamp", *OHLCV_COLUMNS])
+            df = df.drop_duplicates(subset="timestamp").sort_values("timestamp")
+            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+            if name != chain[0]:
+                log.info("Fetched %s %s from fallback exchange '%s'.", symbol, timeframe, name)
+            return df.set_index("datetime")[OHLCV_COLUMNS]
+        except Exception as exc:  # noqa: BLE001 — try the next exchange
+            errors.append(f"{name}: {exc}")
+            log.warning("Fetch of %s from '%s' failed (%s); trying next source.", symbol, name, exc)
+    raise RuntimeError(
+        f"All exchanges failed for {symbol} {timeframe}: " + " | ".join(errors))
 
 
 def split_forming(df: pd.DataFrame, timeframe: str):

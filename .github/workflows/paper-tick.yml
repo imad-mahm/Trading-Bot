@@ -54,6 +54,11 @@ jobs:
 
       - name: Commit updated state
         run: |
+          if [ ! -f live_state.json ]; then
+            echo "No live_state.json was produced this cycle (all data sources may "
+            echo "have been unreachable). Nothing to commit — exiting cleanly."
+            exit 0
+          fi
           git config user.name "paper-bot"
           git config user.email "paper-bot@users.noreply.github.com"
           git add -f live_state.json

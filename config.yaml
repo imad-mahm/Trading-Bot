@@ -96,6 +96,14 @@ live:
   timeframe: 1d               # one decision per day, shortly after 00:00 UTC
   starting_balance: 10000     # fake USDT per symbol
 
+  # Live-price sources, tried in order. Binance is the validated source, but it
+  # returns HTTP 451 to US IPs (e.g. GitHub Actions), so the bot falls back to
+  # Kraken then OKX automatically. All three serve the same daily USDT candles.
+  exchanges:
+    - binance
+    - kraken
+    - okx
+
   poll_seconds: 300           # `paper.py run`: how often to poll for stops
   daily_loss_limit: 0.05      # flatten + halt if equity drops >5% within 24h
   data_anomaly_threshold: 0.30  # skip + alert if a candle jumps >30% vs previous

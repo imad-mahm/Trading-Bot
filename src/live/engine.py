@@ -270,8 +270,12 @@ def _is_anomalous(closed: pd.DataFrame, threshold: float) -> bool:
 def run_once(config, state, notifier, fetch_fn=None, now=None) -> None:
     """Do one complete cycle: fetch, sanity-check, advance, poll stops, enforce
     the daily-loss limit, and persist — for every live symbol."""
-    fetch_fn = fetch_fn or fetch_recent_ohlcv
     live = config["live"]
+    # Default fetch tries the configured exchange chain (Binance -> Kraken -> OKX),
+    # so a geoblocked primary exchange falls back instead of crashing the cycle.
+    if fetch_fn is None:
+        _chain = live.get("exchanges")
+        fetch_fn = lambda s, t, l: fetch_recent_ohlcv(s, t, l, exchanges=_chain)  # noqa: E731
     strategy, timeframe = live["strategy"], live["timeframe"]
     params = resolve_params(config)
     risk_cfg = config["risk"]
