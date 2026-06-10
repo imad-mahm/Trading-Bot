@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "halted": false,
+  "halt_reason": null,
+  "portfolios": {
+    "BTC/USDT": {
+      "symbol": "BTC/USDT",
+      "start_time": "2026-06-10T09:10:37.881174+00:00",
+      "start_equity": 10000,
+      "cash": 10000,
+      "position": null,
+      "realized_pnl": 0.0,
+      "fees_paid": 0.0,
+      "trades": [],
+      "total_periods": 0,
+      "time_in_market_periods": 0,
+      "peak_equity": 10000,
+      "max_drawdown": 0.0,
+      "pending": null,
+      "last_processed_close": "2026-06-09T00:00:00+00:00",
+      "equity_snapshots": []
+    },
+    "ETH/USDT": {
+      "symbol": "ETH/USDT",
+      "start_time": "2026-06-10T09:10:37.881174+00:00",
+      "start_equity": 10000,
+      "cash": 10000,
+      "position": null,
+      "realized_pnl": 0.0,
+      "fees_paid": 0.0,
+      "trades": [],
+      "total_periods": 0,
+      "time_in_market_periods": 0,
+      "peak_equity": 10000,
+      "max_drawdown": 0.0,
+      "pending": null,
+      "last_processed_close": "2026-06-09T00:00:00+00:00",
+      "equity_snapshots": []
+    }
+  }
+}
