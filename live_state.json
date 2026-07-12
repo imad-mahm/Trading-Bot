@@ -12,17 +12,13 @@
       "realized_pnl": 0.0,
       "fees_paid": 0.0,
       "trades": [],
-      "total_periods": 31,
+      "total_periods": 32,
       "time_in_market_periods": 0,
       "peak_equity": 10000,
       "max_drawdown": 0.0,
       "pending": null,
-      "last_processed_close": "2026-07-10T00:00:00+00:00",
+      "last_processed_close": "2026-07-11T00:00:00+00:00",
       "equity_snapshots": [
-        [
-          "2026-07-11T00:56:42.998317+00:00",
-          10000
-        ],
         [
           "2026-07-11T04:13:38.825996+00:00",
           10000
@@ -81,6 +77,10 @@
         ],
         [
           "2026-07-11T23:26:05.920633+00:00",
+          10000
+        ],
+        [
+          "2026-07-12T01:04:04.002255+00:00",
           10000
         ]
       ]
@@ -94,17 +94,13 @@
       "realized_pnl": 0.0,
       "fees_paid": 0.0,
       "trades": [],
-      "total_periods": 31,
+      "total_periods": 32,
       "time_in_market_periods": 0,
       "peak_equity": 10000,
       "max_drawdown": 0.0,
       "pending": null,
-      "last_processed_close": "2026-07-10T00:00:00+00:00",
+      "last_processed_close": "2026-07-11T00:00:00+00:00",
       "equity_snapshots": [
-        [
-          "2026-07-11T00:56:42.998317+00:00",
-          10000
-        ],
         [
           "2026-07-11T04:13:38.825996+00:00",
           10000
@@ -163,6 +159,10 @@
         ],
         [
           "2026-07-11T23:26:05.920633+00:00",
+          10000
+        ],
+        [
+          "2026-07-12T01:04:04.002255+00:00",
           10000
         ]
       ]
