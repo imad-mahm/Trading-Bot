@@ -12,17 +12,13 @@
       "realized_pnl": 0.0,
       "fees_paid": 0.0,
       "trades": [],
-      "total_periods": 33,
+      "total_periods": 34,
       "time_in_market_periods": 0,
       "peak_equity": 10000,
       "max_drawdown": 0.0,
       "pending": null,
-      "last_processed_close": "2026-07-12T00:00:00+00:00",
+      "last_processed_close": "2026-07-13T00:00:00+00:00",
       "equity_snapshots": [
-        [
-          "2026-07-12T23:52:19.874798+00:00",
-          10000
-        ],
         [
           "2026-07-13T02:36:11.128136+00:00",
           10000
@@ -65,6 +61,10 @@
         ],
         [
           "2026-07-13T23:28:40.687379+00:00",
+          10000
+        ],
+        [
+          "2026-07-14T00:54:51.343303+00:00",
           10000
         ]
       ]
@@ -73,22 +73,25 @@
       "symbol": "ETH/USDT",
       "start_time": "2026-06-10T09:10:37.881174+00:00",
       "start_equity": 10000,
-      "cash": 10000,
-      "position": null,
+      "cash": 7557.627901382321,
+      "position": {
+        "units": 1.3724388422530638,
+        "entry_price": 1776.92,
+        "entry_time": "2026-07-14T00:00:00+00:00",
+        "stop_price": 1631.1940165589674,
+        "entry_fee": 3.658071041364471,
+        "atr_at_entry": 72.86299172051632
+      },
       "realized_pnl": 0.0,
-      "fees_paid": 0.0,
+      "fees_paid": 3.658071041364471,
       "trades": [],
-      "total_periods": 33,
+      "total_periods": 34,
       "time_in_market_periods": 0,
-      "peak_equity": 10000,
+      "peak_equity": 10004.576562012153,
       "max_drawdown": 0.0,
       "pending": null,
-      "last_processed_close": "2026-07-12T00:00:00+00:00",
+      "last_processed_close": "2026-07-13T00:00:00+00:00",
       "equity_snapshots": [
-        [
-          "2026-07-12T23:52:19.874798+00:00",
-          10000
-        ],
         [
           "2026-07-13T02:36:11.128136+00:00",
           10000
@@ -132,6 +135,10 @@
         [
           "2026-07-13T23:28:40.687379+00:00",
           10000
+        ],
+        [
+          "2026-07-14T00:54:51.343303+00:00",
+          10004.576562012153
         ]
       ]
     }
