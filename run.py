@@ -38,6 +38,7 @@ from src.config import load_config
 from src.data_loader import (
     days_to_bars, load_data, split_in_out, to_backtesting_format, validate_data,
 )
+from src.market_data import load_market_data, validate_market
 from src.strategies import (
     STRATEGIES, BuyAndHold, DonchianBreakout, SmaCrossover, TrendFilter,
 )
@@ -127,12 +128,90 @@ def run_variant(df_segment, variant: Variant, cash, commission):
     return stats
 
 
+
+# --------------------------------------------------------------------------- #
+# Universes: crypto (Binance, the original) or markets (ETFs: gold, oil, ...).
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class Universe:
+    name: str
+    symbols: list
+    labels: dict
+    fees: dict
+    start_date: str
+    end_date: str | None
+
+    def load(self, config, symbol, timeframe, refresh=False, verbose=True):
+        if self.name == "markets":
+            return load_market_data(symbol, self.start_date, self.end_date,
+                                    config["data_dir"], refresh=refresh, verbose=verbose)
+        return load_data(symbol, timeframe, self.start_date, self.end_date,
+                         config["data_dir"], refresh=refresh, verbose=verbose)
+
+
+def get_universe(config: dict, name: str) -> Universe:
+    if name == "markets":
+        m = config["markets"]
+        return Universe("markets", list(m["symbols"]), dict(m["symbols"]), m["fees"],
+                        m["start_date"], m.get("end_date"))
+    return Universe("crypto", list(config["symbols"]), {}, config["fees"],
+                    config["start_date"], config["end_date"])
+
+
+# The one configuration judged across markets: the strategy the live bot runs.
+# Fixed in advance (not the best per market — that would be curve-fitting).
+LIVE_VARIANT = "Donchian 20/20"
+
+
+def passes_bar(row, bh) -> dict:
+    """The Phase 2 success bar, applied to one out-of-sample result."""
+    checks = {
+        "shallower DD": abs(row["Max DD [%]"]) <= abs(bh["Max DD [%]"]) * 2 / 3,
+        "Calmar > B&H": row["Calmar"] > bh["Calmar"],
+        "trades < 100": row["# Trades"] < 100,
+        "fees < 5%": row["Fees [%]"] < 5,
+    }
+    checks["PASS"] = all(checks.values())
+    return checks
+
+
+def print_cross_market_summary(rows: list, reports_dir: Path, universe: Universe, timeframe: str):
+    if not rows:
+        return
+    table = pd.DataFrame(rows).set_index("Market")
+    title = (f"CROSS-MARKET SUMMARY — {LIVE_VARIANT} vs Buy & Hold, OUT-OF-SAMPLE "
+             f"(after in-sample end)")
+    report.print_table(title, table)
+    n_pass = int((table["Passes bar?"] == "YES ✓").sum())
+    print(f"  {LIVE_VARIANT} clears the success bar on {n_pass} of {len(table)} markets.")
+    print("  Bar = max DD ≤ ⅔ of Buy & Hold's, Calmar above Buy & Hold's, "
+          "<100 trades, fees <5%.\n")
+    report.save_table_csv(table, reports_dir / f"summary_{universe.name}_{timeframe}.csv")
+
 # --------------------------------------------------------------------------- #
 # Commands
 # --------------------------------------------------------------------------- #
 
-def cmd_download(config: dict, timeframe_arg: str | None, refresh: bool) -> None:
+def cmd_download(config: dict, timeframe_arg: str | None, refresh: bool,
+                 universe_name: str = "crypto") -> None:
     """Download + cache + validate data for every symbol and timeframe."""
+    if universe_name == "markets":
+        uni = get_universe(config, "markets")
+        print(f"Downloading daily ETF data (adjusted) from {uni.start_date}\n")
+        failed = []
+        for ticker in uni.symbols:
+            try:
+                df = uni.load(config, ticker, "1d", refresh=refresh)
+                validate_market(df, ticker)
+            except Exception as exc:  # noqa: BLE001 — report all failures at the end
+                print(f"  {ticker}: FAILED ({exc})")
+                failed.append(ticker)
+        print("Done." if not failed else f"Done, but failed: {', '.join(failed)}")
+        if failed:
+            sys.exit(1)
+        return
+
     timeframes = [timeframe_arg] if timeframe_arg else config["timeframes"]
     print(f"Downloading market data for timeframes: {', '.join(timeframes)}\n")
     for timeframe in timeframes:
@@ -160,8 +239,9 @@ def _regime_cash_mask(df, regime_period: int, cutoff: str):
 
 def cmd_backtest(config: dict, args) -> None:
     cash = config["cash"]
-    commission = bt_engine.effective_commission(config["fees"])
-    timeframe = args.timeframe or config["timeframe"]
+    universe = get_universe(config, args.universe)
+    commission = bt_engine.effective_commission(universe.fees)
+    timeframe = "1d" if universe.name == "markets" else (args.timeframe or config["timeframe"])
     reports_dir = Path(config["reports_dir"])
     reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -169,20 +249,19 @@ def cmd_backtest(config: dict, args) -> None:
     # Targeted mode: keep just the chosen strategy's variants (+ the benchmark).
     if args.strategy and not args.all:
         variants = [v for v in variants if v.key in (args.strategy, "buy_and_hold")]
-    symbols = [args.symbol] if args.symbol else config["symbols"]
+    symbols = [args.symbol] if args.symbol else universe.symbols
+    summary_rows: list = []
 
-    print(f"Timeframe: {timeframe}   |   starting cash: ${cash:,.0f}")
+    print(f"Universe: {universe.name}   |   Timeframe: {timeframe}   |   starting cash: ${cash:,.0f}")
     print(f"Fees+slippage per side: {commission * 100:.3f}%  "
           f"(round-trip ≈ {commission * 200:.3f}%)")
     print(f"In-sample ends: {config['in_sample_end']}   |   "
           f"out-of-sample = after that, untouched\n")
 
     for symbol in symbols:
-        df = load_data(
-            symbol, timeframe, config["start_date"], config["end_date"],
-            config["data_dir"], refresh=args.refresh, verbose=True,
-        )
+        df = universe.load(config, symbol, timeframe, refresh=args.refresh)
         in_df, out_df = split_in_out(df, config["in_sample_end"])
+        label = f"{symbol} ({universe.labels[symbol]})" if symbol in universe.labels else symbol
 
         is_stats: dict = {}
         oos_stats: dict = {}
@@ -197,9 +276,9 @@ def cmd_backtest(config: dict, args) -> None:
                                            order=list(oos_table.index))
 
         safe = symbol.replace("/", "")
-        report.print_table(f"{symbol}  {timeframe}  —  IN-SAMPLE "
+        report.print_table(f"{label}  {timeframe}  —  IN-SAMPLE "
                            f"(order follows OOS Calmar)", is_table)
-        report.print_table(f"{symbol}  {timeframe}  —  OUT-OF-SAMPLE "
+        report.print_table(f"{label}  {timeframe}  —  OUT-OF-SAMPLE "
                            f"(sorted by Calmar; this is the one that matters)", oos_table)
         report.save_table_csv(is_table, reports_dir / f"{safe}_{timeframe}_in-sample.csv")
         report.save_table_csv(oos_table, reports_dir / f"{safe}_{timeframe}_out-of-sample.csv")
@@ -225,6 +304,22 @@ def cmd_backtest(config: dict, args) -> None:
 
         print(f"  Tables + charts saved to {reports_dir}/ for {symbol}\n")
 
+        if LIVE_VARIANT in oos_table.index:
+            row, bh = oos_table.loc[LIVE_VARIANT], oos_table.loc["Buy & Hold"]
+            is_row, is_bh = is_table.loc[LIVE_VARIANT], is_table.loc["Buy & Hold"]
+            checks = passes_bar(row, bh)
+            summary_rows.append({
+                "Market": label,
+                "B&H Ret %": bh["Return [%]"], "B&H DD %": bh["Max DD [%]"],
+                "B&H Calmar": bh["Calmar"],
+                "20/20 Ret %": row["Return [%]"], "20/20 DD %": row["Max DD [%]"],
+                "20/20 Calmar": row["Calmar"], "Trades": row["# Trades"],
+                "In-sample Calmar 20/20 vs B&H": f"{is_row['Calmar']} vs {is_bh['Calmar']}",
+                "Passes bar?": "YES ✓" if checks["PASS"] else
+                    "no: " + ", ".join(k for k, v in checks.items() if not v and k != "PASS"),
+            })
+
+    print_cross_market_summary(summary_rows, reports_dir, universe, timeframe)
     print("Backtest complete. The out-of-sample table (sorted by Calmar) is the verdict.")
 
 
@@ -242,6 +337,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_dl = sub.add_parser("download", help="Fetch + cache + validate data.")
     p_dl.add_argument("--timeframe", help="Only this timeframe (default: all in config).")
     p_dl.add_argument("--refresh", action="store_true", help="Ignore cache, re-download.")
+    p_dl.add_argument("--universe", choices=["crypto", "markets"], default="crypto",
+                      help="crypto (Binance) or markets (gold, oil, stocks... ETFs).")
 
     p_sel = sub.add_parser(
         "select",
@@ -257,6 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Run every variant on every symbol.")
     p_bt.add_argument("--timeframe", help="Candle size, e.g. 1d or 1h.")
     p_bt.add_argument("--refresh", action="store_true", help="Re-download first.")
+    p_bt.add_argument("--universe", choices=["crypto", "markets"], default="crypto",
+                      help="crypto (Binance) or markets (gold, oil, stocks... ETFs).")
     return parser
 
 
@@ -264,7 +363,7 @@ def main() -> None:
     args = build_parser().parse_args()
     config = load_config()
     if args.command == "download":
-        cmd_download(config, args.timeframe, args.refresh)
+        cmd_download(config, args.timeframe, args.refresh, args.universe)
     elif args.command == "select":
         from src.select import select_and_confirm
         select_and_confirm(config, args.timeframe or config["timeframe"])

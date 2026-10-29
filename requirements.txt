@@ -8,4 +8,5 @@ backtesting>=0.6.4   # The backtest engine (needs >=0.6.4 for Python 3.13)
 matplotlib>=3.7      # Charts for the report
 PyYAML>=6.0          # Read config.yaml
 pyarrow>=14.0        # Save/load cached data as fast Parquet files
+yfinance>=0.2.50     # Daily ETF prices (gold, oil, stocks...) for --universe markets
 pytest>=7.0          # Run the small test suite

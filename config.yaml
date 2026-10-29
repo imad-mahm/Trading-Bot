@@ -77,6 +77,38 @@ strategies:
     exit_days_sweep: [10, 20]    # M-day low to sell
 
 # =============================================================================
+# Beyond crypto: gold, silver, oil, other commodities, stocks, bonds, FX
+# -----------------------------------------------------------------------------
+# `python run.py download --universe markets` / `backtest --all --universe markets`
+# Runs the SAME strategy matrix, the SAME risk rules and the SAME in-sample /
+# out-of-sample split (in_sample_end above) on ETFs. ETFs are what a normal
+# brokerage account can buy, with no leverage and no futures rolls to model.
+# Prices are dividend- and split-adjusted. Lookbacks count TRADING days here.
+# =============================================================================
+markets:
+  start_date: "2008-01-01"   # longer history than crypto: in-sample covers the
+                             # 2008 crash, 2014 and 2020 oil collapses, etc.
+  fees:
+    taker_fee: 0.0005        # 0.05% per side: commission/FX costs at a typical
+                             # non-US broker (many US brokers charge $0)
+    slippage: 0.0005         # 0.05% per side: bid/ask spread on liquid ETFs
+                             # -> round trip ≈ 0.20% (crypto: 0.30%)
+  symbols:                   # ticker: what it tracks
+    GLD: Gold
+    SLV: Silver
+    PPLT: Platinum
+    CPER: Copper
+    USO: Crude oil (WTI)
+    UNG: Natural gas
+    DBA: Agriculture (grains, softs, livestock)
+    DBC: Broad commodities basket
+    SPY: S&P 500 (US large caps)
+    QQQ: Nasdaq-100 (US tech)
+    EFA: Developed markets ex-US stocks
+    TLT: 20+ year US Treasury bonds
+    FXE: Euro vs US dollar
+
+# =============================================================================
 # Phase 2: LIVE PAPER TRADING (fake money, real live prices, no API key)
 # -----------------------------------------------------------------------------
 # The live bot imports the SAME strategy signal, indicators, and risk.py as the
