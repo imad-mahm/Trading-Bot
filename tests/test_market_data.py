@@ -64,3 +64,14 @@ def test_success_bar():
     shallow_not_enough = {**good, "Max DD [%]": -25.0}
     assert not passes_bar(shallow_not_enough, bh)["PASS"]
     assert not passes_bar({**good, "Calmar": 0.2}, bh)["PASS"]
+
+
+def test_zero_volume_ghost_print_is_dropped_but_real_crash_kept():
+    df = _clean(_yahoo_like(20))
+    ghost_day, crash_day = df.index[5], df.index[12]
+    df.loc[ghost_day, ["open", "high", "low", "close"]] *= 0.67   # bogus print...
+    df.loc[ghost_day, "volume"] = 0.0                              # ...nothing traded
+    df.loc[crash_day:, ["open", "high", "low", "close"]] *= 0.7    # real crash, with volume
+    out = _clean(df)
+    assert ghost_day not in out.index
+    assert crash_day in out.index

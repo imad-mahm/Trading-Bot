@@ -428,3 +428,64 @@ BTC/USDT: equity $9,000 fell >5% from 24h peak $10,000. Trading halted.
 `python -m pytest -q` also covers the live bot: portfolio accounting (fills,
 fees, P&L), state save/reload round-trip, missed-candle catch-up, the stop-loss
 trigger, and the daily-loss halt.
+
+---
+---
+
+# Beyond crypto: gold, silver, oil, stocks, bonds (ETFs)
+
+```powershell
+python run.py download --universe markets          # needs Yahoo Finance access
+python run.py backtest --all --universe markets
+```
+
+The **same** strategy matrix, risk rules and in-sample/out-of-sample split
+(in-sample to 2023-12-31) run on 13 ETFs: gold (GLD), silver (SLV), platinum
+(PPLT), copper (CPER), WTI oil (USO), natural gas (UNG), agriculture (DBA), a
+broad commodity basket (DBC), the S&P 500 (SPY), Nasdaq-100 (QQQ), developed
+ex-US stocks (EFA), long Treasuries (TLT) and the euro (FXE).
+
+- **ETFs, not futures:** buyable in a normal brokerage account, no leverage, no
+  contract rolls to model. Prices are dividend- and split-adjusted.
+- **History from 2008**, so the in-sample period spans 2008–2023.
+- **Fees:** 0.05% + 0.05% slippage per side (round trip ≈ 0.20%).
+- **Lookbacks count trading days** (about 252 a year), the standard convention.
+- **Bad data is filtered:** zero-volume "ghost prints" that spike and snap back
+  (CPER had two in 2014–15) are dropped. Real crashes with volume are kept.
+- **No Yahoo access?** The `market-data` workflow (Actions tab → Run workflow)
+  downloads the data on GitHub and publishes it to a data-only `market-data`
+  branch: `git fetch origin market-data && git checkout origin/market-data -- data/`.
+
+The run ends with a **cross-market summary** that judges one configuration
+fixed in advance, the live bot's Donchian 20/20, on every market. It does not
+judge the best result per market, which would be hindsight.
+
+## What the run showed (data to 2026-10-28)
+
+**Out-of-sample (2024–2026), Donchian 20/20 cleared the success bar on 4 of 13
+markets:** gold, platinum, crude oil and natural gas. Read alone, that looks
+promising. In context, it isn't:
+
+- **In-sample (2008–2023), it earned roughly nothing.** Calmar was about 0 on
+  every market, around 1% a year or less. An equal-weight basket of all 13
+  markets running it made **0.4% a year** over 16 years.
+- **The 2024–26 passes come from a handful of exceptional trends:** the
+  2025 gold/silver/platinum rally (+38%, +54%, +30% for the strategy that year)
+  and the 2026 oil spike (+53%). That's a short, unusually trendy window, not
+  evidence of a durable edge.
+- **No setting rescues it.** Choosing the best variant by in-sample results
+  alone picks Donchian 55/10, which made a median **0.8% a year**
+  out-of-sample. Every variant in the matrix had a median in-sample CAGR between
+  −0.4% and +1%.
+- **What it does do is cut drawdowns.** The 13-market basket's worst drop was
+  −18% vs −43% for holding the same basket. But almost no return came with
+  that, so cash would have done about as well.
+- **Not modelled:** interest on idle cash (the strategy is in cash about half
+  the time). This was near zero for most of 2009–2021, so it would add little
+  in-sample.
+
+**Bottom line:** on these markets, at this speed, a single-instrument Donchian
+breakout doesn't survive honest testing. Crypto's strong, long trends are what
+made it work there. Don't connect a broker for these markets on this evidence.
+Anything new (other strategies, a portfolio approach) should go through the
+same in-sample/out-of-sample test first.

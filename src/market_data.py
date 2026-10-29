@@ -43,7 +43,24 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["open", "high", "low", "close"])
     df = df[(df[["open", "high", "low", "close"]] > 0).all(axis=1)]
     df["volume"] = df["volume"].fillna(0.0)
-    return df.astype(float)
+    return _drop_ghost_prints(df.astype(float))
+
+
+def _drop_ghost_prints(df: pd.DataFrame, threshold: float = 0.15) -> pd.DataFrame:
+    """Remove bogus zero-volume bars that spike and snap straight back.
+
+    Thinly traded ETFs (e.g. CPER in 2014-15) sometimes carry a "print" on a
+    day nothing actually traded: price drops 30%+ and returns the next day. A
+    breakout/stop strategy would happily trade on that fake price. A bar is
+    dropped only if ALL hold: zero volume, a >15% move in, and a >15% move back
+    out in the opposite direction. Real crashes (with volume) are kept.
+    """
+    c = df["close"]
+    move_in = c / c.shift(1) - 1
+    move_out = c.shift(-1) / c - 1
+    ghost = ((df["volume"] == 0) & (move_in.abs() > threshold)
+             & (move_out.abs() > threshold) & (move_in * move_out < 0))
+    return df[~ghost]
 
 
 def download_market(ticker: str, start_date: str, end_date: str | None = None) -> pd.DataFrame:
@@ -63,7 +80,9 @@ def load_market_data(ticker: str, start_date: str, end_date: str | None,
     """Return cached data for `ticker`, downloading it first if needed."""
     path = market_cache_path(data_dir, ticker)
     if path.exists() and not refresh:
-        df = pd.read_parquet(path)
+        # Re-apply the ghost-print filter: caches written before it existed
+        # (or downloaded elsewhere) still get cleaned.
+        df = _drop_ghost_prints(pd.read_parquet(path))
         if verbose:
             print(f"  {ticker}: loaded from cache ({path.name})")
     else:
