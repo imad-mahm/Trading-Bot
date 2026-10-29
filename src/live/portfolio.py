@@ -25,6 +25,12 @@ class Position:
     stop_price: float     # ATR stop; if price hits this we exit
     entry_fee: float      # fee paid on entry (for P&L math)
     atr_at_entry: float   # ATR used to size the stop (for the record)
+    # Exchange mode only (None in paper mode): the live stop-loss order on the
+    # exchange that protects this position.
+    stop_order_id: Optional[str] = None
+    stop_client_id: Optional[str] = None
+    stop_limit_price: Optional[float] = None
+    stop_replacements: int = 0
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -55,6 +61,9 @@ class Portfolio:
     pending: Optional[dict] = None           # {"action","signal_time","atr"} or None
     last_processed_close: Optional[str] = None
     equity_snapshots: list = field(default_factory=list)  # [[iso, equity], ...]
+    # Exchange mode only: an order that was sent but whose result isn't recorded
+    # yet (write-ahead log, so a crash mid-order can't cause a double buy).
+    inflight: Optional[dict] = None
 
     # ----- core accounting -----
 
@@ -70,10 +79,14 @@ class Portfolio:
         return (price - self.position.entry_price) * self.position.units
 
     def open_position(self, units, price, time_iso, stop_price, commission_rate, atr):
-        """Buy `units` at `price`, paying the combined commission."""
-        notional = units * price
-        fee = notional * commission_rate
-        self.cash -= notional + fee
+        """Buy `units` at `price`, paying the combined commission (paper mode)."""
+        fee = units * price * commission_rate
+        self.open_position_filled(units, price, time_iso, stop_price, fee, atr)
+
+    def open_position_filled(self, units, price, time_iso, stop_price, fee, atr):
+        """Record a buy of `units` at `price` that cost `fee` dollars in fees.
+        Paper mode computes the fee; exchange mode passes the real one."""
+        self.cash -= units * price + fee
         self.fees_paid += fee
         self.position = Position(
             units=units, entry_price=price, entry_time=time_iso,
@@ -81,11 +94,17 @@ class Portfolio:
         )
 
     def close_position(self, price, time_iso, commission_rate, reason) -> dict:
-        """Sell the whole position at `price`, paying commission. Logs the trade
-        and returns it. Net P&L includes BOTH the entry and exit fees."""
+        """Sell the whole position at `price`, paying commission (paper mode).
+        Logs the trade and returns it. Net P&L includes BOTH entry and exit fees."""
+        fee = self.position.units * price * commission_rate
+        return self.close_position_filled(price, time_iso, fee, reason)
+
+    def close_position_filled(self, price, time_iso, fee, reason, units=None) -> dict:
+        """Record selling the position at `price` with a real `fee` in dollars.
+        `units` is what actually sold (exchange mode can leave tiny dust)."""
         pos = self.position
-        notional = pos.units * price
-        fee = notional * commission_rate
+        sold = pos.units if units is None else units
+        notional = sold * price
         self.cash += notional - fee
         self.fees_paid += fee
 
@@ -100,7 +119,7 @@ class Portfolio:
             "exit_price": price,
             "units": pos.units,
             "stop_price": pos.stop_price,
-            "reason": reason,                       # "signal" or "stop"
+            "reason": reason,                       # "signal", "stop", ...
             "fees": pos.entry_fee + fee,
             "pnl": net_pnl,
             "return_pct": (price / pos.entry_price - 1) * 100,
