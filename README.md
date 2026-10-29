@@ -428,3 +428,116 @@ BTC/USDT: equity $9,000 fell >5% from 24h peak $10,000. Trading halted.
 `python -m pytest -q` also covers the live bot: portfolio accounting (fills,
 fees, P&L), state save/reload round-trip, missed-candle catch-up, the stop-loss
 trigger, and the daily-loss halt.
+
+---
+---
+
+# Phase 3: Exchange Trading on Binance (real orders, fake money first)
+
+`trade.py` runs the **same** strategy as the paper bot, but places real orders
+on Binance. It starts on Binance's **Testnet** (fake funds) and can only reach
+real money through a deliberate double-key switch. The paper bot is untouched
+and keeps its own state, so the Phase 2 experiment continues alongside.
+
+**Reuse, don't rewrite (still).** Signals come from the paper engine's
+`compute_signal` (itself the backtest strategy's code), sizing from `risk.py`,
+the stop from `risk.atr_stop_price`. Only *execution* is new
+(`src/live/broker.py`, `src/live/exchange_engine.py`).
+
+## A. What's different from paper trading
+
+| | Paper bot | Exchange bot |
+|---|---|---|
+| Fills | Simulated at the next candle's open | Real market orders; real fill price and real fees |
+| Stop-loss | Bot checks price each tick | **A STOP_LOSS_LIMIT order rests on Binance**, enforced 24/7 even if the bot is down |
+| Missed candles | Replayed with historical fills | Missed **exits** are acted on immediately; missed **entries** older than `max_signal_age_hours` are not chased |
+| Money | Each symbol's own $10,000 | Each symbol gets `allocation_usd`, capped by `max_position_usd` and by your free USDT |
+
+The stop order's limit price sits `stop_limit_buffer` (1%) below the trigger
+so it fills in fast markets. If price ever gaps straight through the limit,
+the bot sees it on the next cycle and sells at market.
+
+## B. Safety rails
+
+- **Fake money by default.** `environment: testnet` (or `demo`).
+- **Double key for real money.** `environment: live` in config **and**
+  `LIVE_TRADING_CONFIRM=yes-real-money` in the environment, **and** a
+  `max_position_usd` cap. Missing any one → the bot refuses to start.
+- **Keys only from `.env`/environment**, never `config.yaml`. `trade.py check`
+  refuses a live key that is allowed to withdraw funds.
+- **No double orders after a crash.** Before any order is sent, a write-ahead
+  record is saved. If the bot dies mid-order, the next cycle looks the order up
+  by its client id and finishes the bookkeeping. Order creation is never blindly
+  retried.
+- **Reconciles with the exchange every cycle.** Did the stop fire? Is it still
+  there (re-placed if someone cancelled it)? Does the account still hold the
+  coins? If coins moved outside the bot → **halt and alert** instead of guessing.
+- **Never unprotected.** If a stop can't be placed after 3 tries, the position
+  is sold.
+- **Same guards as paper:** daily-loss limit (flatten + halt), data anomaly
+  guard, `halt [--flatten]` / `resume` kill switch, Telegram alerts.
+
+## C. Testnet keys (2 minutes)
+
+1. Go to <https://testnet.binance.vision>, log in with GitHub, and click
+   **Generate HMAC_SHA256 Key**. The testnet account comes pre-funded with fake
+   balances.
+2. Copy `.env.example` to `.env` and fill in `BINANCE_API_KEY` and
+   `BINANCE_API_SECRET`. Run `chmod 600 .env`.
+
+Testnet prices can drift from the real market. For a more realistic rehearsal,
+use **Demo Trading** instead (`environment: demo`, keys from demo.binance.com),
+which mirrors the real order book. Signals always come from real-market candles
+either way.
+
+## D. Free cloud VM (Oracle Cloud always-free)
+
+Binance blocks US servers (that's why the paper bot falls back to Kraken/OKX
+on GitHub Actions), so pick a **non-US region**, e.g. Frankfurt or Amsterdam.
+
+```bash
+# On the VM (Ubuntu), once:
+sudo apt update && sudo apt install -y python3-venv git
+git clone https://github.com/imad-mahm/Trading-Bot.git && cd Trading-Bot
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env && nano .env && chmod 600 .env    # keys + Telegram
+sudo timedatectl set-ntp true                           # Binance rejects skewed clocks
+
+.venv/bin/python trade.py check      # connects, shows balances + rules; places NO orders
+.venv/bin/python -m pytest -q        # everything green before going further
+
+# Install the service (edit YOUR_USER first):
+sudo cp deploy/trade-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now trade-bot
+journalctl -u trade-bot -f
+```
+
+**Tip:** the same VM can also run the paper bot with `deploy/paper-bot.service`.
+That fixes the GitHub Actions throttling, where ticks dropped from every 30
+minutes to every 4–6 hours. If you do this, disable the `paper-tick` workflow so
+two copies don't fight over `live_state.json`.
+
+## E. Commands
+
+```bash
+python trade.py check               # environment, balances, market rules — no orders
+python trade.py status              # equity, position, stop order id, P&L
+python trade.py halt --flatten      # stop entries and sell everything now
+python trade.py resume
+python trade.py adopt-flat BTC/USDT --yes   # you sold by hand: record it as closed
+```
+
+## F. Going live (later, deliberately)
+
+Run on testnet or demo through **several real trades**, including at least one
+stop-out, and check that every fill, fee and stop matches what you see in the
+Binance app. Then:
+
+1. Create a **binance.com** API key: Spot trading on, **withdrawals off**,
+   restricted to your VM's IP.
+2. In `config.yaml`, set `environment: live` and choose `allocation_usd` and
+   `max_position_usd` you can afford to lose.
+3. Add `LIVE_TRADING_CONFIRM=yes-real-money` to `.env`, run `trade.py check`,
+   then restart the service.
+
+A strategy with only a few real trades behind it is unproven. Size accordingly.

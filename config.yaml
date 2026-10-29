@@ -115,3 +115,32 @@ live:
     enabled: true
     bot_token: ""             # paste here OR set env TELEGRAM_BOT_TOKEN (preferred)
     chat_id: ""               # paste here OR set env TELEGRAM_CHAT_ID
+
+# =============================================================================
+# Phase 3: EXCHANGE TRADING on Binance (trade.py) — real orders
+# -----------------------------------------------------------------------------
+# Reuses the `live:` strategy, params, symbols, timeframe, daily_loss_limit and
+# data_anomaly_threshold above, plus `risk:`. Only execution settings live here.
+# The paper bot (paper.py) ignores this block and keeps running as before.
+# API keys are NEVER put here: set BINANCE_API_KEY / BINANCE_API_SECRET in .env.
+# =============================================================================
+exchange_trading:
+  # testnet = Binance Spot Testnet (fake funds, keys via GitHub login)
+  # demo    = Binance Demo Trading (fake funds, mirrors the real order book)
+  # live    = REAL MONEY. Also requires env LIVE_TRADING_CONFIRM=yes-real-money
+  environment: testnet
+
+  allocation_usd: 1000        # USDT the bot may use per symbol (its own sub-account)
+  max_position_usd: 1000      # hard cap on any single position's size (required for live)
+
+  stop_limit_buffer: 0.01     # stop order's limit price sits 1% below its trigger
+  max_signal_age_hours: 6     # don't enter on a breakout older than this (bot was down)
+  poll_seconds: 300           # how often `trade.py run` checks stops and candles
+
+  # Where the SIGNAL candles come from. Always real-market public data, even on
+  # testnet (testnet prices can be odd). Run from a non-US server so Binance works.
+  data_exchanges:
+    - binance
+
+  state_file: exchange_state.json   # separate from the paper bot's live_state.json
+  log_file: logs/trade.log
