@@ -1,0 +1,28 @@
+# systemd service for the always-on EXCHANGE trading bot (trade.py run).
+#
+# Install on your VM (see README "Phase 3"):
+#   1. Edit YOUR_USER and the paths below.
+#   2. Put your keys in the project's .env file (chmod 600 .env) — NOT in this file.
+#   3. sudo cp deploy/trade-bot.service /etc/systemd/system/trade-bot.service
+#   4. sudo systemctl daemon-reload && sudo systemctl enable --now trade-bot
+#   5. Watch it:  journalctl -u trade-bot -f
+#
+# Restart=always brings it back after a crash or reboot. On startup it reloads
+# exchange_state.json, finishes any order that was in flight, and checks its
+# stop orders against the exchange before doing anything else.
+
+[Unit]
+Description=Crypto Exchange Trading Bot (Phase 3, Binance)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/Trading-Bot
+ExecStart=/home/YOUR_USER/Trading-Bot/.venv/bin/python trade.py run
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

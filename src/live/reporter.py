@@ -121,13 +121,29 @@ def _backtest_over_window(config, symbol, start_iso, fetch_fn=None):
 def build_report(config, state, fetch_fn=None, save=True) -> pd.DataFrame:
     """Per-symbol live performance vs buy-and-hold vs the backtester."""
     commission = commission_rate(config)
-    rows = []
+    rows, offline = [], []
     for symbol in config["live"]["symbols"]:
         port = state.portfolios.get(symbol)
         if port is None or port.last_processed_close is None:
             continue
         price = _current_price(config, symbol, fetch_fn)
         if price is None:
+            # Data source unreachable: still report what the saved state knows,
+            # valuing any open position at its entry price, and say so plainly.
+            equity = port.cash + (port.position.units * port.position.entry_price
+                                  if port.position else 0.0)
+            rows.append({
+                "Symbol": symbol,
+                "Live Return %": round((equity / port.start_equity - 1) * 100, 2),
+                "Live MaxDD %": round(port.max_drawdown * 100, 2),
+                "Backtest Return %": None, "Backtest MaxDD %": None,
+                "Buy&Hold Return %": None,
+                "# Trades": len(port.trades),
+                "Fees $": round(port.fees_paid, 2),
+                "Time in Mkt %": round(port.time_in_market_pct(), 1),
+                "Equity $": round(equity, 2),
+            })
+            offline.append(symbol)
             continue
 
         equity = port.equity(price)
@@ -169,6 +185,9 @@ def build_report(config, state, fetch_fn=None, save=True) -> pd.DataFrame:
         print("  No active portfolios yet. Run `paper.py tick` first.")
         return df
     print(df.set_index("Symbol").to_string())
+    if offline:
+        print(f"\n  ! No price data reachable for {', '.join(offline)}: showing saved state "
+              "only (open positions valued at entry). Backtest and Buy&Hold need live data.")
     print("\n  A large live-vs-backtest gap signals a bug; a small one is healthy.")
 
     if save:
