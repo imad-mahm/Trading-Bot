@@ -1,0 +1,57 @@
+# Download daily ETF price history (gold, silver, oil, stocks, bonds...) for
+# `python run.py backtest --all --universe markets`. The files are published two
+# ways: as a downloadable artifact named "market-data", and on a separate
+# data-only git branch also called `market-data` (never merged into main), so
+# `git fetch origin market-data` gets them too.
+#
+# Why GitHub Actions? Yahoo Finance is reachable from GitHub's runners, so this
+# works even when your own network or a sandbox can't reach it. Run it from the
+# Actions tab ("Run workflow"); then download the artifact and unzip it into
+# your project's data/ folder, or:
+#   git fetch origin market-data && git checkout origin/market-data -- data/ (Or just run `python run.py download --universe
+# markets` on your own machine.)
+
+name: market-data
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [multi-asset]
+    paths: [".github/workflows/market-data.yml", "src/market_data.py"]
+
+permissions:
+  contents: write          # to update the data-only `market-data` branch
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download + validate market data
+        run: python run.py download --universe markets
+
+      - name: Upload data
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-data
+          path: data/mkt_*.parquet
+          retention-days: 30
+
+      - name: Publish to the data-only market-data branch
+        run: |
+          mkdir -p /tmp/pub/data && cp data/mkt_*.parquet /tmp/pub/data/
+          cd /tmp/pub
+          git init -q -b market-data
+          git config user.name "market-data-bot"
+          git config user.email "market-data-bot@users.noreply.github.com"
+          git add data
+          git commit -q -m "Market data snapshot $(date -u +%Y-%m-%d) [skip ci]"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" market-data
